@@ -1,0 +1,137 @@
+---
+title: "Delivery and Logistics"
+output: html_notebook
+---
+
+```{r}
+# install.packages("dplyr")
+# install.packages("tidyr")
+# install.packages("lubridate")
+# install.packages("ggplot")
+# install.packages("ggcorrplot")
+# install.packages("caret")
+# install.packages("lattice")
+# install.packages("recipes")
+
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(ggcorrplot)
+library(caret)
+library(broom)
+library(rlang)
+library(scales)
+library(stringr)
+```
+
+```{r}
+df <- read.csv("Tidy.csv")
+```
+
+```{r}
+regional_logistics_analysis <- df %>%
+  group_by(region) %>%
+  summarise(
+    # 1. Average Delivery Time (Days)
+    avg_delivery_time = mean(delivery_time_days, na.rm = TRUE),
+    
+    # 2. Total Orders (Denominator for the return rate)
+    total_orders = n(),
+    
+    # 3. Total Returns (Count orders where returned is 'Yes')
+    total_returns = sum(returned == "Yes", na.rm = TRUE),
+    
+    .groups = 'drop'
+  ) %>%
+  
+  # Calculate the Return Rate (The correlation/risk indicator)
+  mutate(
+    return_rate = (total_returns / total_orders)
+  ) %>%
+  
+  # Sort the data: Priority 1 is longest delivery time, Priority 2 is highest return rate
+  arrange(desc(avg_delivery_time), desc(return_rate))
+
+
+# --- Visualization (Optional but Recommended) ---
+# Create a scatter plot to visualize the correlation between Time and Returns
+logistics_plot <- ggplot(regional_logistics_analysis, 
+                         aes(x = avg_delivery_time, y = return_rate, color = region)) +
+  geom_point(aes(size = total_orders), alpha = 0.7) +
+  
+  # Label the highest delivery time point
+  geom_text(data = regional_logistics_analysis,
+            aes(label = paste(region)),
+            vjust = 2, hjust = 1, size = 3) +
+            
+  scale_y_continuous(labels = scales::percent, limits = c(0.050, 0.0625)) +
+  scale_x_continuous(limits = c(3, 7)) +
+  labs(
+    title = "Logistics Performance: Delivery Time vs. Return Rate",
+    subtitle = "Size of point indicates total order volume for that segment.",
+    x = "Average Delivery Time (Days)",
+    y = "Return Rate (%)",
+    size = "Order Volume"
+  ) +
+  theme_minimal() +
+  guides(color = "none")
+
+print(logistics_plot)
+
+write.csv(regional_logistics_analysis, "Export/regional_logistics.csv")
+```
+
+
+```{r}
+regional_category_logistics_analysis <- df %>%
+  group_by(region, category) %>%
+  summarise(
+    # 1. Average Delivery Time (Days)
+    avg_delivery_time = mean(delivery_time_days, na.rm = TRUE),
+    
+    # 2. Total Orders (Denominator for the return rate)
+    total_orders = n(),
+    
+    # 3. Total Returns (Count orders where returned is 'Yes')
+    total_returns = sum(returned == "Yes", na.rm = TRUE),
+    
+    .groups = 'drop'
+  ) %>%
+  
+  # Calculate the Return Rate (The correlation/risk indicator)
+  mutate(
+    return_rate = (total_returns / total_orders)
+  ) %>%
+  
+  # Sort the data: Priority 1 is longest delivery time, Priority 2 is highest return rate
+  arrange(desc(avg_delivery_time), desc(return_rate))
+
+# --- Visualization (Optional but Recommended) ---
+# Create a scatter plot to visualize the correlation between Time and Returns
+logistics_plot <- ggplot(regional_category_logistics_analysis, 
+                         aes(x = avg_delivery_time, y = return_rate, color = region)) +
+  geom_point(aes(size = total_orders), alpha = 0.7) +
+  
+  # Label the highest delivery time point
+  geom_text(data = regional_category_logistics_analysis,
+            aes(label = category),
+            vjust = -1, hjust = 1.25, size = 3,
+            show.legend = FALSE) +
+            
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(limits = c(3, 6.5)) +
+  labs(
+    title = "Logistics Performance: Delivery Time vs. Return Rate",
+    subtitle = "Size of point indicates total order volume for that segment.",
+    x = "Average Delivery Time (Days)",
+    y = "Return Rate (%)",
+    size = "Order Volume"
+  ) +
+  theme_minimal()
+
+print(logistics_plot)
+
+write.csv(regional_category_logistics_analysis, "Export/regional_category_logistics.csv")
+```
+
