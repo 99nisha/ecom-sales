@@ -49,8 +49,6 @@ glimpse(df)
 
 # Identify Drivers
 
-## Sales Drivers
-
 - Total Revenue: The total_amount column. This is crucial for revenue optimization.
 - Total Profit: The profit_margin column. This is crucial for product profitability.
 - Quantity Sold: The quantity column. This indicates demand.
