@@ -28,6 +28,7 @@ library(dplyr)
 library(tidyr)
 library(lubridate)
 library(ggplot2)
+library(ggcorrplot)
 ```
 
 ```{r, echo=FALSE}
@@ -55,13 +56,37 @@ The data set does not have any NULL values.
 sum(is.na(df))
 ```
 
-The `order_date` column is in string format. Need to convert to Date type.
-
 ```{r, echo=FALSE}
 df$order_date <- ymd(df$order_date)
+
+# Date Conversion
 df <- df %>%
   mutate(order_date = as.Date(order_date),
          order_year = year(order_date))
+
+# Age Bands
+df <- df %>%
+  mutate(
+    age_group = case_when(
+      customer_age >= 18 & customer_age <= 25 ~ "Young Adults",
+      customer_age >= 26 & customer_age <= 40 ~ "Middle-Aged",
+      customer_age >= 41 & customer_age <= 55 ~ "Older Adults",
+      customer_age > 55 ~ "Seniors",
+      TRUE ~ "Unknown"
+    )
+  )
+
+# Delivery Time
+df <- df %>%
+  mutate(
+    delivery_method = case_when(
+      delivery_time_days <= 2 ~ "Fast Delivery",
+      delivery_time_days <= 5 ~ "Standard Delivery",
+      delivery_time_days > 5 ~ "Slow Delivery",
+      TRUE ~ "Unknown"
+    )
+  )
+
 glimpse(df)
 ```
 
@@ -236,50 +261,69 @@ df_gender
 df_discount <- plot_categorical_features(df, discount)
 df_discount
 ```
+### Grouped by Age
 
+```{r}
+df_age <- plot_categorical_features(df, age_group, mean_total_thresh = 200, mean_profit_thresh = 30)
+df_age
+```
+
+### Grouped by Delivery Method
+
+```{r}
+df_delivery_method <- plot_categorical_features(df, delivery_method, mean_total_thresh = 200, mean_profit_thresh = 30)
+df_delivery_method
+```
 
 
 
 ### Testing for Correlation
 
 ```{r}
-plot_numerical_features <- function(df, numeric_var, color_var = "") {
-  numeric_var <- rlang::ensym(numeric_var)  # capture column name safely
-  color_var <- rlang::ensym(color_var)  # capture column name safely
-  
-  p1 <- ggplot(df, aes(x = total_amount, y = !!numeric_var, colour = factor(!!color_var))) +
-    geom_point(alpha = 0.5, size = 1) +
-    geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
-    #geom_smooth(alpha=0.3, method="lm") +
-    labs(
-      title = "Price vs Total Amount (with y = x reference line)",
-      x = "Total Amount",
-      y = "Price"
-    ) +
-    theme_minimal()
+# --- Spearman correlation matrix ---
+numeric_vars <- df %>%
+  select(price, shipping_cost, profit_margin, total_amount, discount, quantity, delivery_time_days, )
 
-  p2 <- ggplot(df, aes(x = profit_margin, y = !!numeric_var, colour = factor(!!color_var))) +
-    geom_point(alpha = 0.5, size = 1) +
-    geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
-    #geom_smooth(alpha=0.3, method="lm") +
-    labs(
-      title = "Price vs Profit Margin (with y = x reference line)",
-      x = "Profit Margin",
-      y = "Price"
-    ) +
-    theme_minimal() 
-  
-  # Return all three plots as a list
-  list(total_amount_plot = p1, profit_margin_plot = p2)
-}
+spearman_corr <- cor(numeric_vars, method = "spearman", use = "complete.obs")
+spearman_corr
+
+ggcorrplot(spearman_corr,
+           method = "circle",
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("blue", "white", "red"),
+           title = "Spearman Correlation Matrix",
+           outline.col = "white") +
+  theme(
+    axis.text = element_text(size = 12)
+  )
+
 ```
+
 
 **Price vs Total Amount and Profit Margin**
 
 ```{r}
-df_price <- plot_numerical_features(df, price, color_var = "quantity")
-df_price$total_amount_plot
-df_price$profit_margin_plot
+ggplot(df, aes(x = total_amount, y = price, colour = factor(quantity))) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
+  labs(
+    title = "Price vs Total Amount (with y = x reference line)",
+    x = "Total Amount",
+    y = "Price"
+  ) +
+  theme_minimal()
+
+ggplot(df, aes(x = profit_margin, y = price, colour = factor(quantity))) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
+  labs(
+    title = "Price vs Profit Margin (with y = x reference line)",
+    x = "Profit Margin",
+    y = "Price"
+  ) +
+  theme_minimal()
 ```
 
 Clustered. Shows Non-Linear, Multiplicative relationships. Mainly driven by Quantity. Possibly driven by Discounts, Shipping Costs and Category Margins.
@@ -287,9 +331,30 @@ Clustered. Shows Non-Linear, Multiplicative relationships. Mainly driven by Quan
 **Shipping Cost vs Total Amount and Profit Margin**
 
 ```{r}
-df_shipping <- plot_numerical_features(df, shipping_cost, color_var = "quantity")
-df_shipping$total_amount_plot
-df_shipping$profit_margin_plot
+# Fit linear model with log(total_amount)
+model_total <- lm(shipping_cost ~ log(total_amount), data = df)
+summary(model_total)
+
+# Plot with fitted log curve
+ggplot(df, aes(x = total_amount, y = shipping_cost)) +
+  geom_point(alpha = 0.5, size = 1, colour = "steelblue") +
+  geom_smooth(method = "lm", formula = y ~ log(x), colour = "red", se = TRUE) +
+  labs(
+    title = "Shipping Cost vs Total Amount (Log Model)",
+    x = "Total Amount",
+    y = "Shipping Cost"
+  ) +
+  theme_minimal()
+
+# Non parametric
+ggplot(df, aes(x = profit_margin, y = shipping_cost)) +
+  geom_point(alpha = 0.5, size = 1, colour = "steelblue") +
+  labs(
+    title = "Shipping Cost vs Profit Margin (with y = x reference line)",
+    x = "Profit Margin",
+    y = "Shipping Cost"
+  ) +
+  theme_minimal()
 ```
 
 
