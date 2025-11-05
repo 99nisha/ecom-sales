@@ -1,0 +1,321 @@
+---
+title: "Hutch - Data Analysis Assessment"
+output: html_notebook
+---
+
+## Business Context
+
+Hutch Sri Lanka launched a new online shop for their **broadband and mobile customers** which is doing well. Now, the management needs **detailed insights** on how to make the most money, understand what customers are buying, check how fast deliveries are, and see which products are most profitable.
+
+## Analytical Questions
+
+1.  Revenue Optimization & Product Profitability Question: Which product categories and regions generate the highest profit margin percentages (profit_margin / total_amount), and how does the applied discount impact this profitability across different payment methods?
+
+    -   category, region, profit_margin, total_amount, discount, payment_method.
+
+2.  Customer Behavior & Segmentation Question: Are there specific customer age and gender segments (customer_age, customer_gender) that show a significantly higher average quantity of items purchased or a lower returned rate for the high-profit categories, indicating a key target audience for retention efforts?
+
+    -   customer_age, customer_gender, quantity, returned, category.
+
+3.  Delivery Performance & Customer Satisfaction Question: Which combination of region and category has the longest average delivery_time_days, and is this correlated with a higher return rate (returned = 'Yes'), pointing to critical logistics issues impacting customer experience?
+
+    -   region, category, delivery_time_days, returned.
+
+# Load Data Set and Libraries
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+```
+
+```{r, echo=FALSE}
+# Theme
+my_theme <- list(
+  orange       = "#ff6c0e",
+  orange_light = "#fbd9c9",
+  blue         = "#205375",
+  blue_light   = "#90caf1"
+)
+```
+
+
+```{r}
+df <- read.csv("Data Set.csv")
+```
+
+```{r, echo=FALSE}
+glimpse(df)
+```
+
+The data set does not have any NULL values.
+
+```{r}
+sum(is.na(df))
+```
+
+The `order_date` column is in string format. Need to convert to Date type.
+
+```{r, echo=FALSE}
+df$order_date <- ymd(df$order_date)
+df <- df %>%
+  mutate(order_date = as.Date(order_date),
+         order_year = year(order_date))
+glimpse(df)
+```
+
+
+# Identify Drivers
+
+## Sales Drivers
+
+- Total Revenue: The total_amount column. This is crucial for revenue optimization.
+- Total Profit: The profit_margin column. This is crucial for product profitability.
+- Quantity Sold: The quantity column. This indicates demand.
+
+```{r}
+plot_categorical_features <- function(df, group_var,
+                                      mean_total_thresh = 200,
+                                      mean_profit_thresh = 30) {
+  group_var <- rlang::ensym(group_var)
+
+  # ---- Summarize once ----
+  df_summary <- df %>%
+    group_by(!!group_var) %>%
+    summarise(
+      mean_total = mean(total_amount, na.rm = TRUE),
+      mean_profit = mean(profit_margin, na.rm = TRUE),
+      mean_quantity = mean(quantity, na.rm = TRUE)
+    ) %>%
+    arrange(desc(mean_total))
+
+  # ---- Common aesthetics ----
+  common_theme <- theme_minimal() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 13, face = "bold")
+    )
+
+  # ---- Plot 1: Mean Total ----
+  p1 <- ggplot(df_summary, aes(x = reorder(!!group_var, mean_total), y = mean_total,
+                               fill = mean_total > mean_total_thresh)) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = my_theme$orange, "FALSE" = my_theme$blue)) +
+    coord_flip() +
+    labs(
+      title = paste("Average Total Amount by", rlang::as_string(group_var)),
+      x = rlang::as_string(group_var),
+      y = "Mean Total Amount"
+    ) +
+    common_theme
+
+  # ---- Plot 2: Mean Profit ----
+  p2 <- ggplot(df_summary, aes(x = reorder(!!group_var, mean_profit), y = mean_profit,
+                               fill = mean_profit > mean_profit_thresh)) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = my_theme$orange, "FALSE" = my_theme$blue)) +
+    coord_flip() +
+    labs(
+      title = paste("Average Profit Margin by", rlang::as_string(group_var)),
+      x = rlang::as_string(group_var),
+      y = "Mean Profit Margin"
+    ) +
+    common_theme
+
+  # ---- Plot 3: Mean Quantity ----
+  p3 <- ggplot(df_summary, aes(x = reorder(!!group_var, mean_quantity), y = mean_quantity)) +
+    geom_col(fill = my_theme$blue) +
+    coord_flip() +
+    labs(
+      title = paste("Average Quantity by", rlang::as_string(group_var)),
+      x = rlang::as_string(group_var),
+      y = "Mean Quantity"
+    ) +
+    common_theme
+
+  # ---- Plot 4: Category Contributions ----
+  df_long <- df_summary %>%
+    pivot_longer(
+      cols = c(mean_total, mean_profit, mean_quantity),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    mutate(
+      metric = recode(metric,
+        mean_total = "Mean Total Amount",
+        mean_profit = "Mean Profit Margin",
+        mean_quantity = "Mean Quantity"
+      )
+    ) %>%
+    group_by(metric) %>%
+    mutate(
+      contribution = value / sum(abs(value), na.rm = TRUE)  # <-- scaled within each metric
+    ) %>%
+    ungroup()
+
+  # Consistent order for group variable
+  category_order <- df_long %>%
+    group_by(!!group_var) %>%
+    summarise(total_contribution = sum(contribution, na.rm = TRUE)) %>%
+    arrange(desc(total_contribution)) %>%
+    pull(!!group_var)
+
+  df_long <- df_long %>%
+    mutate(
+      !!group_var := factor(!!group_var, levels = category_order),
+      metric = factor(
+        metric,
+        levels = c("Mean Quantity", "Mean Total Amount", "Mean Profit Margin")
+      )
+    )
+
+  p4 <- ggplot(df_long, aes(x = contribution, y = metric, fill = !!group_var)) +
+    geom_col(width = 0.6, alpha = 0.9) +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(
+      title = "Category Contributions to Average Metrics",
+      x = "Category Contribution (%)",
+      y = "",
+      fill = rlang::as_string(group_var)
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 9),
+      plot.title = element_text(size = 13, face = "bold"),
+      axis.text.y = element_text(size = 11)
+    )
+
+  # ---- Return everything ----
+  list(
+    summary = df_summary,
+    mean_total_plot = p1,
+    mean_profit_plot = p2,
+    mean_quantity_plot = p3,
+    contribution_plot = p4
+  )
+}
+
+```
+
+
+### Grouped by Category
+
+```{r}
+df_category <- plot_categorical_features(df, category, mean_total_thresh = 200, mean_profit_thresh = 30)
+df_category
+```
+
+### Grouped by Region
+
+```{r}
+df_region <- plot_categorical_features(df, region)
+df_region
+```
+
+### Grouped by Payment Method
+
+```{r}
+df_payment_method <- plot_categorical_features(df, payment_method)
+df_payment_method
+```
+
+### Grouped by Customer Gender
+
+```{r}
+df_gender <- plot_categorical_features(df, customer_gender)
+df_gender
+```
+
+### Grouped by Discount
+
+```{r}
+df_discount <- plot_categorical_features(df, discount)
+df_discount
+```
+
+
+
+
+### Testing for Correlation
+
+```{r}
+plot_numerical_features <- function(df, numeric_var, color_var = "") {
+  numeric_var <- rlang::ensym(numeric_var)  # capture column name safely
+  color_var <- rlang::ensym(color_var)  # capture column name safely
+  
+  p1 <- ggplot(df, aes(x = total_amount, y = !!numeric_var, colour = factor(!!color_var))) +
+    geom_point(alpha = 0.5, size = 1) +
+    geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
+    #geom_smooth(alpha=0.3, method="lm") +
+    labs(
+      title = "Price vs Total Amount (with y = x reference line)",
+      x = "Total Amount",
+      y = "Price"
+    ) +
+    theme_minimal()
+
+  p2 <- ggplot(df, aes(x = profit_margin, y = !!numeric_var, colour = factor(!!color_var))) +
+    geom_point(alpha = 0.5, size = 1) +
+    geom_abline(slope = 1, intercept = 0, colour = my_theme$blue, linetype = "dashed") +
+    #geom_smooth(alpha=0.3, method="lm") +
+    labs(
+      title = "Price vs Profit Margin (with y = x reference line)",
+      x = "Profit Margin",
+      y = "Price"
+    ) +
+    theme_minimal() 
+  
+  # Return all three plots as a list
+  list(total_amount_plot = p1, profit_margin_plot = p2)
+}
+```
+
+**Price vs Total Amount and Profit Margin**
+
+```{r}
+df_price <- plot_numerical_features(df, price, color_var = "quantity")
+df_price$total_amount_plot
+df_price$profit_margin_plot
+```
+
+Clustered. Shows Non-Linear, Multiplicative relationships. Mainly driven by Quantity. Possibly driven by Discounts, Shipping Costs and Category Margins.
+
+**Shipping Cost vs Total Amount and Profit Margin**
+
+```{r}
+df_shipping <- plot_numerical_features(df, shipping_cost, color_var = "quantity")
+df_shipping$total_amount_plot
+df_shipping$profit_margin_plot
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
