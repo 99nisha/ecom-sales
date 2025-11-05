@@ -12,39 +12,7 @@ library(ggcorrplot)
 ```
 
 ```{r}
-df <- read.csv("Data Set.csv")
-
-df$order_date <- ymd(df$order_date)
-
-# Date Conversion
-df <- df %>%
-  mutate(order_date = as.Date(order_date),
-         order_year = year(order_date))
-
-# Age Bands
-df <- df %>%
-  mutate(
-    age_group = case_when(
-      customer_age >= 18 & customer_age <= 25 ~ "Young Adults",
-      customer_age >= 26 & customer_age <= 40 ~ "Middle-Aged",
-      customer_age >= 41 & customer_age <= 55 ~ "Older Adults",
-      customer_age > 55 ~ "Seniors",
-      TRUE ~ "Unknown"
-    )
-  )
-
-# Delivery Time
-df <- df %>%
-  mutate(
-    delivery_method = case_when(
-      delivery_time_days <= 2 ~ "Fast Delivery",
-      delivery_time_days <= 5 ~ "Standard Delivery",
-      delivery_time_days > 5 ~ "Slow Delivery",
-      TRUE ~ "Unknown"
-    )
-  )
-
-glimpse(df)
+df <- read.csv("Tidy.csv")
 ```
 
 # Identify Drivers
@@ -52,3 +20,192 @@ glimpse(df)
 - Total Revenue: The total_amount column. This is crucial for revenue optimization.
 - Total Profit: The profit_margin column. This is crucial for product profitability.
 - Quantity Sold: The quantity column. This indicates demand.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(rlang)
+library(scales)
+
+plot_categorical_feature_contributions <- function(df, group_var) {
+  group_var <- rlang::ensym(group_var)
+  
+  # ---- 1. Summary ----
+  df_summary <- df %>%
+    group_by(!!group_var) %>%
+    summarise(
+      mean_total = mean(total_amount, na.rm = TRUE),
+      mean_profit = mean(profit_margin, na.rm = TRUE),
+      mean_quantity = mean(quantity, na.rm = TRUE)
+    ) %>%
+    arrange(desc(mean_total))
+  
+  # ---- 2. Prepare contribution data (long format) ----
+  df_long <- df_summary %>%
+    pivot_longer(
+      cols = c(mean_total, mean_profit, mean_quantity),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    mutate(
+      metric = recode(metric,
+                      mean_total = "Mean Total Amount",
+                      mean_profit = "Mean Profit Margin",
+                      mean_quantity = "Mean Quantity")
+    ) %>%
+    group_by(metric) %>%
+    mutate(
+      contribution = value / sum(abs(value), na.rm = TRUE)
+    ) %>%
+    ungroup()
+  
+  # ---- Consistent order for plotting ----
+  category_order <- df_long %>%
+    group_by(!!group_var) %>%
+    summarise(total_contribution = sum(contribution, na.rm = TRUE)) %>%
+    arrange(desc(total_contribution)) %>%
+    pull(!!group_var)
+  
+  df_long <- df_long %>%
+    mutate(
+      !!group_var := factor(!!group_var, levels = category_order),
+      metric = factor(
+        metric,
+        levels = c("Mean Quantity", "Mean Total Amount", "Mean Profit Margin")
+      )
+    )
+  
+  # ---- 3. Contribution plot ----
+  contribution_plot <- ggplot(df_long, aes(x = contribution, y = metric, fill = !!group_var)) +
+    geom_col(width = 0.6, alpha = 0.9) +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(
+      title = "Category Contributions to Average Metrics",
+      x = "Category Contribution (%)",
+      y = "",
+      fill = rlang::as_string(group_var)
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 9),
+      plot.title = element_text(size = 13, face = "bold"),
+      axis.text.y = element_text(size = 11)
+    )
+  
+  # ---- 4. Return results ----
+  list(
+    summary = df_summary,
+    contribution_plot = contribution_plot,
+    contribution_data = df_long
+  )
+}
+```
+
+
+```{r}
+# List of categorical variables and the corresponding functions
+cat_vars <- list(
+  category = plot_categorical_feature_contributions,
+  region = plot_categorical_feature_contributions,
+  payment_method = plot_categorical_feature_contributions,
+  customer_gender = plot_categorical_feature_contributions,
+  discount = plot_categorical_feature_contributions,
+  age_group = plot_categorical_feature_contributions,
+  delivery_method = plot_categorical_feature_contributions
+)
+
+# Directory to save outputs
+dir.create("Export", showWarnings = FALSE)
+
+# Loop over each variable
+results_list <- lapply(names(cat_vars), function(var_name) {
+  
+  # Run the function
+  result <- cat_vars[[var_name]](df, !!rlang::sym(var_name))
+  
+  # Export summary
+  write.csv(result$summary, file = paste0("Export/", "Categorical_Total_Profit_Quantity_Summary/", var_name, "_summary.csv"), row.names = FALSE)
+  
+  # Export contribution data
+  write.csv(result$contribution_data, file = paste0("Export/", "Categorical_Total_Profit_Quantity_Contributions/", var_name, "_contribution.csv"), row.names = FALSE)
+  
+  # Return result for plotting or further use
+  result$contribution_plot
+})
+
+# Optionally name the list for easy access
+names(results_list) <- names(cat_vars)
+
+# Access plots
+results_list$category
+results_list$region
+results_list$payment_method
+results_list$customer_gender
+results_list$discount
+results_list$age_group
+results_list$delivery_method
+```
+
+```{r}
+# --- Spearman correlation matrix ---
+numeric_vars <- df %>%
+  select(price, shipping_cost, profit_margin, total_amount, discount, quantity, delivery_time_days, )
+
+spearman_corr <- cor(numeric_vars, method = "spearman", use = "complete.obs")
+spearman_corr
+
+ggcorrplot(spearman_corr,
+           method = "circle",
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("blue", "white", "red"),
+           title = "Spearman Correlation Matrix of\nShipping Cost, Profit Margin, Total Order Amount,\nDiscounts, Quantity Sold and Delivery Times",
+           outline.col = "white") +
+  theme(
+    axis.text = element_text(size = 12)
+  )
+
+# --- Price vs Total Amount and Profit Margin ---
+model_total <- lm(shipping_cost ~ log(total_amount), data = df)
+
+x_seq <- seq(min(df$total_amount, na.rm = TRUE),
+             max(df$total_amount, na.rm = TRUE),
+             length.out = 200)
+
+pred_data <- data.frame(total_amount = x_seq)
+pred_values <- predict(model_total, 
+                       newdata = pred_data, 
+                       interval = "confidence")
+
+pred_df <- cbind(pred_data, pred_values)
+
+pred_df <- data.frame(
+  total_amount = x_seq,
+  fit = pred_values[, "fit"],
+  lwr = pred_values[, "lwr"],
+  upr = pred_values[, "upr"]
+)
+
+pred_df
+
+write.csv(pred_df, "Export/shipping_cost_log_model_predictions.csv", row.names = FALSE)
+
+ggplot(df, aes(x = total_amount, y = shipping_cost)) +
+  geom_point(alpha = 0.5, size = 1, colour = "steelblue") +
+  geom_line(data = pred_df, aes(x = total_amount, y = fit), colour = "red", size = 1) +
+  geom_ribbon(data = pred_df, aes(x = total_amount, ymin = lwr, ymax = upr), alpha = 0.2, fill = "red", inherit.aes = FALSE) +
+  labs(
+    title = "Shipping Cost vs Total Amount (Log Model with CI)",
+    x = "Total Amount",
+    y = "Shipping Cost"
+  ) +
+  theme_minimal()
+
+
+```
+

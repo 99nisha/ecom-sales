@@ -1,0 +1,10 @@
+"customer_gender","metric","value","contribution"
+"Male","Mean Total Amount",171.248027590435,0.342165407024684
+"Male","Mean Profit Margin",28.3897302268547,0.343514845198305
+"Male","Mean Quantity",1.48743102391171,0.335429725974636
+"Female","Mean Total Amount",169.657329052206,0.338987081291856
+"Female","Mean Profit Margin",28.0036835533357,0.338843692558476
+"Female","Mean Quantity",1.49726483529552,0.33764734319838
+"Other","Mean Total Amount",159.577813411079,0.31884751168346
+"Other","Mean Profit Margin",26.2514285714286,0.317641462243219
+"Other","Mean Quantity",1.4497084548105,0.326922930826984
