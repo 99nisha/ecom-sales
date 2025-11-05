@@ -4,53 +4,495 @@ output: html_notebook
 ---
 
 ```{r}
+# install.packages("dplyr")
+# install.packages("tidyr")
+# install.packages("lubridate")
+# install.packages("ggplot")
+# install.packages("ggcorrplot")
+# install.packages("caret")
+# install.packages("lattice")
+# install.packages("recipes")
+
 library(dplyr)
 library(tidyr)
 library(lubridate)
 library(ggplot2)
 library(ggcorrplot)
+library(caret)
+library(broom)
+library(rlang)
+library(scales)
+library(stringr)
 ```
 
 ```{r}
-df <- read.csv("Data Set.csv")
-
-df$order_date <- ymd(df$order_date)
-
-# Date Conversion
-df <- df %>%
-  mutate(order_date = as.Date(order_date),
-         order_year = year(order_date))
-
-# Age Bands
-df <- df %>%
-  mutate(
-    age_group = case_when(
-      customer_age >= 18 & customer_age <= 25 ~ "Young Adults",
-      customer_age >= 26 & customer_age <= 40 ~ "Middle-Aged",
-      customer_age >= 41 & customer_age <= 55 ~ "Older Adults",
-      customer_age > 55 ~ "Seniors",
-      TRUE ~ "Unknown"
-    )
-  )
-
-# Delivery Time
-df <- df %>%
-  mutate(
-    delivery_method = case_when(
-      delivery_time_days <= 2 ~ "Fast Delivery",
-      delivery_time_days <= 5 ~ "Standard Delivery",
-      delivery_time_days > 5 ~ "Slow Delivery",
-      TRUE ~ "Unknown"
-    )
-  )
-
-glimpse(df)
+df <- read.csv("Tidy.csv")
 ```
 
 # Identify Drivers
 
-## Sales Drivers
-
 - Total Revenue: The total_amount column. This is crucial for revenue optimization.
 - Total Profit: The profit_margin column. This is crucial for product profitability.
 - Quantity Sold: The quantity column. This indicates demand.
+
+```{r}
+plot_categorical_feature_contributions <- function(df, group_var) {
+  group_var <- rlang::ensym(group_var)
+  
+  # ---- 1. Summary (MODIFIED to include total_returns) ----
+  df_summary <- df %>%
+    group_by(!!group_var) %>%
+    summarise(
+      mean_total = mean(total_amount, na.rm = TRUE),
+      mean_profit = mean(profit_margin, na.rm = TRUE),
+      mean_quantity = mean(quantity, na.rm = TRUE),
+      # ADDED: Total number of returns for contribution calculation
+      total_returns = sum(returned == "Yes", na.rm = TRUE) 
+    ) %>%
+    arrange(desc(mean_total))
+  
+  # ---- 2. Prepare contribution data (long format) (MODIFIED) ----
+  df_long <- df_summary %>%
+    pivot_longer(
+      # UPDATED: Added total_returns
+      cols = c(mean_total, mean_profit, mean_quantity, total_returns),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    mutate(
+      metric = recode(metric,
+                      mean_total = "Mean Total Amount",
+                      mean_profit = "Mean Profit Margin",
+                      mean_quantity = "Mean Quantity",
+                      # ADDED: Recode for new metric
+                      total_returns = "Total Returns Contribution")
+    ) %>%
+    group_by(metric) %>%
+    mutate(
+      # The contribution calculation is now correct for all metrics
+      contribution = value / sum(abs(value), na.rm = TRUE)
+    ) %>%
+    ungroup()
+  
+  # ---- Consistent order for plotting ----
+  category_order <- df_long %>%
+    group_by(!!group_var) %>%
+    summarise(total_contribution = sum(contribution, na.rm = TRUE)) %>%
+    arrange(desc(total_contribution)) %>%
+    pull(!!group_var)
+  
+  df_long <- df_long %>%
+    mutate(
+      !!group_var := factor(!!group_var, levels = category_order),
+      # UPDATED: Added "Total Returns Contribution" as the first factor level
+      metric = factor(
+        metric,
+        levels = c("Mean Quantity", "Mean Total Amount", "Mean Profit Margin", "Total Returns Contribution")
+      )
+    )
+  
+  # ---- 3. Contribution plot (Title Modified) ----
+  contribution_plot <- ggplot(df_long, aes(x = contribution, y = metric, fill = !!group_var)) +
+    geom_col(width = 0.6, alpha = 0.9) +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(
+      title = "Contributions to Key E-commerce Metrics",
+      x = "Contribution (%)",
+      y = "",
+      fill = rlang::as_string(group_var)
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 9),
+      plot.title = element_text(size = 13, face = "bold"),
+      axis.text.y = element_text(size = 11)
+    )
+  
+  # ---- 4. Return results ----
+  list(
+    summary = df_summary,
+    contribution_plot = contribution_plot,
+    contribution_data = df_long
+  )
+}
+```
+
+
+```{r}
+# List of categorical variables and the corresponding functions
+cat_vars <- list(
+  category = plot_categorical_feature_contributions,
+  region = plot_categorical_feature_contributions,
+  payment_method = plot_categorical_feature_contributions,
+  customer_gender = plot_categorical_feature_contributions,
+  discount = plot_categorical_feature_contributions,
+  age_group = plot_categorical_feature_contributions,
+  delivery_method = plot_categorical_feature_contributions,
+  price_tier = plot_categorical_feature_contributions
+)
+
+# Directory to save outputs
+dir.create("Export", showWarnings = FALSE)
+
+# Loop over each variable
+results_list <- lapply(names(cat_vars), function(var_name) {
+  
+  # Run the function
+  result <- cat_vars[[var_name]](df, !!rlang::sym(var_name))
+  
+  # Export summary
+  write.csv(result$summary, file = paste0("Export/", "Categorical_Total_Profit_Quantity_Summary/", var_name, "_summary.csv"), row.names = FALSE)
+  
+  # Export contribution data
+  write.csv(result$contribution_data, file = paste0("Export/", "Categorical_Total_Profit_Quantity_Contributions/", var_name, "_contribution.csv"), row.names = FALSE)
+  
+  # Return result for plotting or further use
+  result$contribution_plot
+})
+
+# Optionally name the list for easy access
+names(results_list) <- names(cat_vars)
+
+# Access plots
+results_list$category
+results_list$region
+results_list$payment_method
+results_list$customer_gender
+results_list$discount
+results_list$age_group
+results_list$delivery_method
+results_list$price_tier
+```
+
+```{r}
+# --- Spearman correlation matrix ---
+numeric_vars <- df %>%
+  select(price, shipping_cost, profit_margin, total_amount, discount, quantity, delivery_time_days, )
+
+spearman_corr <- cor(numeric_vars, method = "spearman", use = "complete.obs")
+spearman_corr
+
+ggcorrplot(spearman_corr,
+           method = "circle",
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("blue", "white", "red"),
+           title = "Spearman Correlation Matrix of\nShipping Cost, Profit Margin, Total Order Amount,\nDiscounts, Quantity Sold and Delivery Times",
+           outline.col = "white") +
+  theme(
+    axis.text = element_text(size = 12)
+  )
+
+# --- Price vs Total Amount and Profit Margin ---
+model_total <- lm(shipping_cost ~ log(total_amount), data = df)
+
+x_seq <- seq(min(df$total_amount, na.rm = TRUE),
+             max(df$total_amount, na.rm = TRUE),
+             length.out = 200)
+
+pred_data <- data.frame(total_amount = x_seq)
+pred_values <- predict(model_total, 
+                       newdata = pred_data, 
+                       interval = "confidence")
+
+pred_df <- cbind(pred_data, pred_values)
+
+pred_df <- data.frame(
+  total_amount = x_seq,
+  fit = pred_values[, "fit"],
+  lwr = pred_values[, "lwr"],
+  upr = pred_values[, "upr"]
+)
+
+pred_df
+
+write.csv(pred_df, "Export/shipping_cost_log_model_predictions.csv", row.names = FALSE)
+
+ggplot(df, aes(x = total_amount, y = shipping_cost)) +
+  geom_point(alpha = 0.5, size = 1, colour = "steelblue") +
+  geom_line(data = pred_df, aes(x = total_amount, y = fit), colour = "red", size = 1) +
+  geom_ribbon(data = pred_df, aes(x = total_amount, ymin = lwr, ymax = upr), alpha = 0.2, fill = "red", inherit.aes = FALSE) +
+  labs(
+    title = "Shipping Cost vs Total Amount (Log Model with CI)",
+    x = "Total Amount",
+    y = "Shipping Cost"
+  ) +
+  theme_minimal()
+
+
+```
+
+## Selected: Price, Quantity, Discount and Category
+
+```{r}
+sales_data <- df %>%
+  select(total_amount, profit_margin, price, quantity, discount, category)
+
+dmy <- dummyVars("~ category", data = sales_data, fullRank = TRUE)
+
+category_dummies <- data.frame(predict(dmy, newdata = sales_data))
+
+sales_encoded <- sales_data %>%
+  select(-category) %>%
+  bind_cols(category_dummies)
+
+head(sales_encoded)
+```
+
+## Multiple Linear Regression Model
+
+- Target: Total Amount
+
+```{r}
+# Corrected Model Formula Definition
+# We use the dot '.' to include all columns EXCEPT the one we explicitly exclude with the minus sign.
+model_formula <- total_amount ~ . - profit_margin 
+
+# Run the Multiple Linear Regression
+sales_model <- lm(model_formula, data = sales_encoded)
+
+# ----------------------------------------------------
+# 1. Backward Elimination
+# ----------------------------------------------------
+backward_model <- step(sales_model, direction = "backward", trace = 0)
+cat("Backward Elimination Complete.\n\n")
+
+# ----------------------------------------------------
+# 2. Export the Final Model Summary (Coefficients and Performance)
+# ----------------------------------------------------
+
+# A. Extract Coefficients and Statistics using 'tidy' (from broom)
+final_coefficients_df <- tidy(backward_model)
+
+# Rename the columns for clarity (optional, but good practice)
+final_coefficients_df <- final_coefficients_df %>%
+  rename(
+    Predictor = term,
+    Estimate = estimate,
+    Std_Error = std.error,
+    T_Value = statistic,
+    P_Value = p.value
+  )
+
+# B. Extract Global Model Performance Metrics using 'glance' (from broom)
+final_performance_df <- glance(backward_model)
+
+# Select and transpose key performance metrics for a clean summary table
+# We only want the R-squared, Adj R-squared, F-statistic, and P-value for the F-test.
+final_performance_metrics <- final_performance_df %>%
+  # 1. Select the columns with R-squared and F-test results
+  dplyr::select(r.squared, adj.r.squared, statistic, p.value) %>%
+  # 2. Pivot the data from wide to long format
+  tidyr::pivot_longer(everything(), names_to = "Metric", values_to = "Value") %>%
+  # 3. Recode the Metric column values to fix the naming error
+  dplyr::mutate(
+    Metric = dplyr::recode(
+      Metric,
+      "statistic" = "F_Statistic",
+      "p.value" = "F_P_Value",
+      "r.squared" = "R_squared",
+      "adj.r.squared" = "Adjusted_R_squared"
+    )
+  )
+
+# Export the Summary Data
+write.csv(final_coefficients_df, "Export/total_amount_backward_model_coefficients.csv", row.names = FALSE)
+write.csv(final_performance_metrics, "Export/total_amount_backward_model_performance.csv", row.names = FALSE)
+
+cat("Exported final model coefficients to: backward_model_coefficients.csv\n")
+cat("Exported final model performance to: backward_model_performance.csv\n\n")
+
+# ----------------------------------------------------
+# 3. Export the Final Model Data (Fitted, Predicted, and Residuals)
+# ----------------------------------------------------
+
+# Augment the original data with model results (fitted values, residuals, etc.)
+final_model_data <- augment(backward_model, data = sales_encoded)
+
+# Select the original features, the target, and the key model output columns
+export_data <- final_model_data %>%
+  select(
+    total_amount, 
+    price, 
+    quantity, 
+    discount, 
+    starts_with("category"), 
+    .fitted,        # The predicted total_amount (Y-hat)
+    .resid          # The residual (Actual - Predicted)
+  )
+
+# Export the Data
+write.csv(export_data, "Export/total_amount_backward_model_fitted_data.csv", row.names = FALSE)
+
+cat("Exported final model fitted data and residuals to: backward_model_fitted_data.csv\n")
+```
+
+```{r}
+# --- Method 1: Print the Final Formula (shows predictors) ---
+cat("--- Model Predictors (Formula) ---\n")
+print(formula(backward_model))
+cat("\n")
+
+# --- Method 2: Construct the Full Equation using Coefficients (Recommended) ---
+
+# Start the equation string with the dependent variable
+equation_string <- "Predicted Total Amount = "
+
+# Iterate through the coefficients data frame
+for (i in 1:nrow(final_coefficients_df)) {
+  term <- final_coefficients_df$Predictor[i]
+  estimate <- final_coefficients_df$Estimate[i]
+  
+  # Format the estimate to two decimal places
+  formatted_estimate <- round(estimate, 3)
+  
+  # Determine the sign for positive terms
+  if (i > 1 && formatted_estimate > 0) {
+    equation_string <- paste0(equation_string, " + ")
+  } else if (i > 1 && formatted_estimate < 0) {
+    # If negative, the minus sign is included, so just add a space
+    equation_string <- paste0(equation_string, " ")
+  }
+  
+  # Add the term to the string
+  if (term == "(Intercept)") {
+    equation_string <- paste0(equation_string, formatted_estimate)
+  } else {
+    # For all other predictors, include the coefficient and the variable name
+    # If coefficient is negative, the formatted_estimate already includes the sign
+    equation_string <- paste0(equation_string, formatted_estimate, " * ", term)
+  }
+}
+
+# Final output
+cat("--- Full Model Equation (Constructed) ---\n")
+cat(equation_string, "\n")
+```
+
+
+```{r}
+key_categories <- c("Home", "Grocery", "Electronics", "Beauty", "Fashion", "Toys", "Sports")
+
+discount_profit_analysis <- df %>%
+  filter(category %in% key_categories) %>%
+  mutate(discount_level = factor(discount)) %>%
+  group_by(category, discount_level) %>%
+  summarise(
+    mean_profit = mean(profit_margin, na.rm = TRUE),
+    total_orders = n(),
+    .groups = 'drop'
+  ) %>%
+  mutate(discount_numeric = as.numeric(as.character(discount_level)))
+
+optimal_discounts <- discount_profit_analysis %>%
+  group_by(category) %>%
+  slice_max(order_by = mean_profit, n = 1, with_ties = FALSE) %>%
+  rename(optimal_discount = discount_level) %>%
+  select(category, optimal_discount, mean_profit)
+
+cat("--- Dataset of Most Profitable Discount Level per Category ---\n")
+print(optimal_discounts)
+
+write.csv(optimal_discounts, "Export/optimal_discounts_by_category.csv")
+```
+
+## Forecasting or what-if simulation (e.g., 10 % increase in discount). 
+
+```{r}
+
+library(dplyr)
+library(scales)
+
+# --- 1. Extract the Discount Coefficient ---
+# Find the row where Predictor is 'discount' and extract its Estimate (beta)
+discount_beta <- final_coefficients_df %>%
+  filter(Predictor == "discount") %>%
+  pull(Estimate)
+
+# --- 2. Calculate Revenue Change ---
+# A 10% absolute increase in discount means delta_discount = 0.10
+delta_discount <- 0.10
+total_records <- nrow(sales_encoded)
+
+# The total predicted change in revenue is:
+# delta_R = Beta_discount * delta_discount * Total_Records
+revenue_change_approx <- discount_beta * delta_discount * total_records
+
+cat("--- Approximate Revenue Change (Using only Discount Coefficient) ---\n")
+cat("Discount Coefficient (Beta_discount): ", round(discount_beta, 2), "\n")
+cat("Total Predicted Revenue Loss: ", scales::dollar(revenue_change_approx), "\n")
+
+```
+
+```{r}
+library(dplyr)
+library(scales)
+
+# --- ASSUMPTION: backward_model and sales_encoded are available ---
+
+# --- 1. Create the Scenario Data: 10% Absolute Increase in Discount ---
+scenario_data <- sales_encoded %>%
+  # Create the hypothetical new discount level
+  mutate(
+    # Add 0.10 to the existing discount level, capped at 0.50 (50%)
+    scenario_discount = pmin(discount + 0.10, 0.50), 
+    # Replace the 'discount' column for prediction
+    discount = scenario_discount 
+  ) %>%
+  # Remove the profit_margin column if it exists, to match the model's training data
+  select(-any_of("profit_margin")) 
+
+# ----------------------------------------------------
+# 2. Predict Total Amount under the Scenario
+# ----------------------------------------------------
+
+# Predict the 'Total Amount' for the scenario
+predicted_total_amount_scenario <- predict(backward_model, newdata = scenario_data)
+
+# ----------------------------------------------------
+# 3. Calculate the Impact
+# ----------------------------------------------------
+
+# Calculate the actual (baseline) total revenue from the original data
+actual_total_revenue <- sum(sales_encoded$total_amount)
+
+# Calculate the predicted total revenue under the scenario
+predicted_total_revenue_scenario <- sum(predicted_total_amount_scenario)
+
+# Calculate the final change
+revenue_change <- predicted_total_revenue_scenario - actual_total_revenue
+
+cat("\n--- Full Model Prediction (What-If Simulation) ---\n")
+cat("Baseline Total Revenue: ", scales::dollar(actual_total_revenue), "\n")
+cat("Predicted Total Revenue with +10% Discount: ", scales::dollar(predicted_total_revenue_scenario), "\n")
+cat("Revenue Change (Loss): ", scales::dollar(revenue_change), "\n")
+```
+## Cross-Selling and Upselling
+
+Every order is a single-item purchase. Cannot check for cross-selling.
+
+```{r}
+# --- Identify Frequent Item Pairs ---
+frequent_pairs <- df %>%
+  group_by(order_id) %>%
+  summarise(products = list(product_id), .groups = 'drop') %>%
+  arrange(desc(lengths(products)))
+
+head(frequent_pairs)
+
+sum()
+```
+
+
+
+
+
+
+
+
+
+

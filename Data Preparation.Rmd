@@ -42,6 +42,17 @@ df <- df %>%
     )
   )
 
+# Price Tiers
+df <- df %>%
+  mutate(
+    price_tier = ntile(price, 3),
+    price_tier = case_when(
+      price_tier == 1 ~ "Low Price",
+      price_tier == 2 ~ "Medium Price",
+      price_tier == 3 ~ "High Price"
+    )
+  )
+
 glimpse(df)
 
 write.csv(df, "Tidy.csv")

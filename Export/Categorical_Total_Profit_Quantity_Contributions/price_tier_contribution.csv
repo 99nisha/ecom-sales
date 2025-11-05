@@ -1,0 +1,13 @@
+"price_tier","metric","value","contribution"
+"High Price","Mean Total Amount",423.744017391304,0.830829109212199
+"High Price","Mean Profit Margin",67.4508113043478,0.799658565595095
+"High Price","Mean Quantity",1.49730434782609,0.334804588761423
+"High Price","Total Returns Contribution",758,0.398318444561219
+"Medium Price","Mean Total Amount",69.8248565217391,0.136904642812348
+"Medium Price","Mean Profit Margin",15.6109660869565,0.185074760514328
+"Medium Price","Mean Quantity",1.48130434782609,0.331226910363601
+"Medium Price","Total Returns Contribution",663,0.348397267472412
+"Low Price","Mean Total Amount",16.4566086956522,0.0322662479754528
+"Low Price","Mean Profit Margin",1.28773652173913,0.0152666738905771
+"Low Price","Mean Quantity",1.4935652173913,0.333968500874976
+"Low Price","Total Returns Contribution",482,0.253284287966369

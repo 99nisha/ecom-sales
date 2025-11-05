@@ -326,7 +326,8 @@ ggplot(df, aes(x = profit_margin, y = price, colour = factor(quantity))) +
   theme_minimal()
 ```
 
-Clustered. Shows Non-Linear, Multiplicative relationships. Mainly driven by Quantity. Possibly driven by Discounts, Shipping Costs and Category Margins.
+Clustered. Shows Non-Linear, Multiplicative relationships. Mainly driven by Quantity. 
+Only Assumption: Possibly driven by Discounts, Shipping Costs and Category Margins.
 
 **Shipping Cost vs Total Amount and Profit Margin**
 

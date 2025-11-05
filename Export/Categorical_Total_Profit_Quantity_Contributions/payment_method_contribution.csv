@@ -1,0 +1,25 @@
+"payment_method","metric","value","contribution"
+"COD","Mean Total Amount",172.012475961538,0.169019830117267
+"COD","Mean Profit Margin",27.9309158653846,0.165755600358762
+"COD","Mean Quantity",1.48149038461538,0.165757778058187
+"COD","Total Returns Contribution",212,0.111403047819233
+"UPI","Mean Total Amount",171.713897978826,0.168726446747062
+"UPI","Mean Profit Margin",28.1769297401347,0.167215566000502
+"UPI","Mean Quantity",1.51299326275265,0.169282503656609
+"UPI","Total Returns Contribution",224,0.117708880714661
+"Debit Card","Mean Total Amount",171.688532627866,0.168701522698466
+"Debit Card","Mean Profit Margin",28.3437248677249,0.168205409178
+"Debit Card","Mean Quantity",1.47924750146972,0.165506831220779
+"Debit Card","Total Returns Contribution",482,0.253284287966369
+"Credit Card","Mean Total Amount",169.004716516023,0.166064399194755
+"Credit Card","Mean Profit Margin",28.0931963845522,0.166718651660438
+"Credit Card","Mean Quantity",1.49884963023829,0.167700031624663
+"Credit Card","Total Returns Contribution",675,0.35470310036784
+"PayPal","Mean Total Amount",167.399337979094,0.164486950779639
+"PayPal","Mean Profit Margin",27.7046225319396,0.164412665972968
+"PayPal","Mean Quantity",1.47502903600465,0.16503484472018
+"PayPal","Total Returns Contribution",199,0.104571728849186
+"Wallet","Mean Total Amount",165.886924939467,0.163000850462811
+"Wallet","Mean Profit Margin",28.2572300242131,0.167692106829329
+"Wallet","Mean Quantity",1.49007263922518,0.166718010719581
+"Wallet","Total Returns Contribution",111,0.0583289542827115

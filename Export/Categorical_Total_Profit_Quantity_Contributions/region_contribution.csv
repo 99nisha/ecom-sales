@@ -1,0 +1,21 @@
+"region","metric","value","contribution"
+"West","Mean Total Amount",174.258299059929,0.20507491298612
+"West","Mean Profit Margin",28.9932035840188,0.206110531044704
+"West","Mean Quantity",1.47752643948296,0.198240974370329
+"West","Total Returns Contribution",371,0.194955333683657
+"South","Mean Total Amount",171.162456487342,0.201431587821023
+"South","Mean Profit Margin",27.8324327531646,0.197858697414962
+"South","Mean Quantity",1.48918776371308,0.19980558412353
+"South","Total Returns Contribution",431,0.226484498160799
+"East","Mean Total Amount",170.384523464658,0.200516081656917
+"East","Mean Profit Margin",28.2496002317497,0.200824310038507
+"East","Mean Quantity",1.50275202780997,0.201625512931114
+"East","Total Returns Contribution",408,0.214398318444561
+"Central","Mean Total Amount",166.992787642045,0.196524536161256
+"Central","Mean Profit Margin",28.05818359375,0.199463543374879
+"Central","Mean Quantity",1.49005681818182,0.199922185897995
+"Central","Total Returns Contribution",287,0.150814503415659
+"North","Mean Total Amount",166.93190042261,0.196452881374683
+"North","Mean Profit Margin",27.5348098256735,0.195742918126948
+"North","Mean Quantity",1.49366085578447,0.200405742677031
+"North","Total Returns Contribution",406,0.213347346295323
