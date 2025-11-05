@@ -20,6 +20,8 @@ library(ggplot2)
 library(ggcorrplot)
 library(caret)
 library(broom)
+library(rlang)
+library(scales)
 ```
 
 ```{r}
@@ -33,29 +35,26 @@ df <- read.csv("Tidy.csv")
 - Quantity Sold: The quantity column. This indicates demand.
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(rlang)
-library(scales)
-
 plot_categorical_feature_contributions <- function(df, group_var) {
   group_var <- rlang::ensym(group_var)
   
-  # ---- 1. Summary ----
+  # ---- 1. Summary (MODIFIED to include total_returns) ----
   df_summary <- df %>%
     group_by(!!group_var) %>%
     summarise(
       mean_total = mean(total_amount, na.rm = TRUE),
       mean_profit = mean(profit_margin, na.rm = TRUE),
-      mean_quantity = mean(quantity, na.rm = TRUE)
+      mean_quantity = mean(quantity, na.rm = TRUE),
+      # ADDED: Total number of returns for contribution calculation
+      total_returns = sum(returned == "Yes", na.rm = TRUE) 
     ) %>%
     arrange(desc(mean_total))
   
-  # ---- 2. Prepare contribution data (long format) ----
+  # ---- 2. Prepare contribution data (long format) (MODIFIED) ----
   df_long <- df_summary %>%
     pivot_longer(
-      cols = c(mean_total, mean_profit, mean_quantity),
+      # UPDATED: Added total_returns
+      cols = c(mean_total, mean_profit, mean_quantity, total_returns),
       names_to = "metric",
       values_to = "value"
     ) %>%
@@ -63,10 +62,13 @@ plot_categorical_feature_contributions <- function(df, group_var) {
       metric = recode(metric,
                       mean_total = "Mean Total Amount",
                       mean_profit = "Mean Profit Margin",
-                      mean_quantity = "Mean Quantity")
+                      mean_quantity = "Mean Quantity",
+                      # ADDED: Recode for new metric
+                      total_returns = "Total Returns Contribution")
     ) %>%
     group_by(metric) %>%
     mutate(
+      # The contribution calculation is now correct for all metrics
       contribution = value / sum(abs(value), na.rm = TRUE)
     ) %>%
     ungroup()
@@ -81,19 +83,20 @@ plot_categorical_feature_contributions <- function(df, group_var) {
   df_long <- df_long %>%
     mutate(
       !!group_var := factor(!!group_var, levels = category_order),
+      # UPDATED: Added "Total Returns Contribution" as the first factor level
       metric = factor(
         metric,
-        levels = c("Mean Quantity", "Mean Total Amount", "Mean Profit Margin")
+        levels = c("Mean Quantity", "Mean Total Amount", "Mean Profit Margin", "Total Returns Contribution")
       )
     )
   
-  # ---- 3. Contribution plot ----
+  # ---- 3. Contribution plot (Title Modified) ----
   contribution_plot <- ggplot(df_long, aes(x = contribution, y = metric, fill = !!group_var)) +
     geom_col(width = 0.6, alpha = 0.9) +
     scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
     scale_fill_brewer(palette = "Set3") +
     labs(
-      title = "Contributions to Average Metrics",
+      title = "Contributions to Key E-commerce Metrics",
       x = "Contribution (%)",
       y = "",
       fill = rlang::as_string(group_var)
@@ -126,7 +129,8 @@ cat_vars <- list(
   customer_gender = plot_categorical_feature_contributions,
   discount = plot_categorical_feature_contributions,
   age_group = plot_categorical_feature_contributions,
-  delivery_method = plot_categorical_feature_contributions
+  delivery_method = plot_categorical_feature_contributions,
+  price_tier = plot_categorical_feature_contributions
 )
 
 # Directory to save outputs
@@ -159,6 +163,7 @@ results_list$customer_gender
 results_list$discount
 results_list$age_group
 results_list$delivery_method
+results_list$price_tier
 ```
 
 ```{r}
@@ -324,6 +329,126 @@ write.csv(export_data, "Export/total_amount_backward_model_fitted_data.csv", row
 
 cat("Exported final model fitted data and residuals to: backward_model_fitted_data.csv\n")
 ```
+
+```{r}
+key_categories <- c("Home", "Grocery", "Electronics", "Beauty", "Fashion", "Toys", "Sports")
+
+discount_profit_analysis <- df %>%
+  filter(category %in% key_categories) %>%
+  mutate(discount_level = factor(discount)) %>%
+  group_by(category, discount_level) %>%
+  summarise(
+    mean_profit = mean(profit_margin, na.rm = TRUE),
+    total_orders = n(),
+    .groups = 'drop'
+  ) %>%
+  mutate(discount_numeric = as.numeric(as.character(discount_level)))
+
+optimal_discounts <- discount_profit_analysis %>%
+  group_by(category) %>%
+  slice_max(order_by = mean_profit, n = 1, with_ties = FALSE) %>%
+  rename(optimal_discount = discount_level) %>%
+  select(category, optimal_discount, mean_profit)
+
+cat("--- Dataset of Most Profitable Discount Level per Category ---\n")
+print(optimal_discounts)
+
+write.csv(optimal_discounts, "Export/optimal_discounts_by_category.csv")
+```
+
+## Forecasting or what-if simulation (e.g., 10 % increase in discount). 
+
+```{r}
+
+library(dplyr)
+library(scales)
+
+# --- 1. Extract the Discount Coefficient ---
+# Find the row where Predictor is 'discount' and extract its Estimate (beta)
+discount_beta <- final_coefficients_df %>%
+  filter(Predictor == "discount") %>%
+  pull(Estimate)
+
+# --- 2. Calculate Revenue Change ---
+# A 10% absolute increase in discount means delta_discount = 0.10
+delta_discount <- 0.10
+total_records <- nrow(sales_encoded)
+
+# The total predicted change in revenue is:
+# delta_R = Beta_discount * delta_discount * Total_Records
+revenue_change_approx <- discount_beta * delta_discount * total_records
+
+cat("--- Approximate Revenue Change (Using only Discount Coefficient) ---\n")
+cat("Discount Coefficient (Beta_discount): ", round(discount_beta, 2), "\n")
+cat("Total Predicted Revenue Loss: ", scales::dollar(revenue_change_approx), "\n")
+
+```
+
+```{r}
+library(dplyr)
+library(scales)
+
+# --- ASSUMPTION: backward_model and sales_encoded are available ---
+
+# --- 1. Create the Scenario Data: 10% Absolute Increase in Discount ---
+scenario_data <- sales_encoded %>%
+  # Create the hypothetical new discount level
+  mutate(
+    # Add 0.10 to the existing discount level, capped at 0.50 (50%)
+    scenario_discount = pmin(discount + 0.10, 0.50), 
+    # Replace the 'discount' column for prediction
+    discount = scenario_discount 
+  ) %>%
+  # Remove the profit_margin column if it exists, to match the model's training data
+  select(-any_of("profit_margin")) 
+
+# ----------------------------------------------------
+# 2. Predict Total Amount under the Scenario
+# ----------------------------------------------------
+
+# Predict the 'Total Amount' for the scenario
+predicted_total_amount_scenario <- predict(backward_model, newdata = scenario_data)
+
+# ----------------------------------------------------
+# 3. Calculate the Impact
+# ----------------------------------------------------
+
+# Calculate the actual (baseline) total revenue from the original data
+actual_total_revenue <- sum(sales_encoded$total_amount)
+
+# Calculate the predicted total revenue under the scenario
+predicted_total_revenue_scenario <- sum(predicted_total_amount_scenario)
+
+# Calculate the final change
+revenue_change <- predicted_total_revenue_scenario - actual_total_revenue
+
+cat("\n--- Full Model Prediction (What-If Simulation) ---\n")
+cat("Baseline Total Revenue: ", scales::dollar(actual_total_revenue), "\n")
+cat("Predicted Total Revenue with +10% Discount: ", scales::dollar(predicted_total_revenue_scenario), "\n")
+cat("Revenue Change (Loss): ", scales::dollar(revenue_change), "\n")
+```
+## Cross-Selling and Upselling
+
+Every order is a single-item purchase. Cannot check for cross-selling.
+
+```{r}
+# --- Identify Frequent Item Pairs ---
+frequent_pairs <- df %>%
+  group_by(order_id) %>%
+  summarise(products = list(product_id), .groups = 'drop') %>%
+  arrange(desc(lengths(products)))
+
+head(frequent_pairs)
+
+sum()
+```
+
+
+
+
+
+
+
 
 
 
