@@ -1,0 +1,56 @@
+---
+title: "Revenue Optimization"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(ggcorrplot)
+```
+
+```{r}
+df <- read.csv("Data Set.csv")
+
+df$order_date <- ymd(df$order_date)
+
+# Date Conversion
+df <- df %>%
+  mutate(order_date = as.Date(order_date),
+         order_year = year(order_date))
+
+# Age Bands
+df <- df %>%
+  mutate(
+    age_group = case_when(
+      customer_age >= 18 & customer_age <= 25 ~ "Young Adults",
+      customer_age >= 26 & customer_age <= 40 ~ "Middle-Aged",
+      customer_age >= 41 & customer_age <= 55 ~ "Older Adults",
+      customer_age > 55 ~ "Seniors",
+      TRUE ~ "Unknown"
+    )
+  )
+
+# Delivery Time
+df <- df %>%
+  mutate(
+    delivery_method = case_when(
+      delivery_time_days <= 2 ~ "Fast Delivery",
+      delivery_time_days <= 5 ~ "Standard Delivery",
+      delivery_time_days > 5 ~ "Slow Delivery",
+      TRUE ~ "Unknown"
+    )
+  )
+
+glimpse(df)
+```
+
+# Identify Drivers
+
+## Sales Drivers
+
+- Total Revenue: The total_amount column. This is crucial for revenue optimization.
+- Total Profit: The profit_margin column. This is crucial for product profitability.
+- Quantity Sold: The quantity column. This indicates demand.
