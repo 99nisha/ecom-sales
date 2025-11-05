@@ -22,6 +22,7 @@ library(caret)
 library(broom)
 library(rlang)
 library(scales)
+library(stringr)
 ```
 
 ```{r}
@@ -329,6 +330,49 @@ write.csv(export_data, "Export/total_amount_backward_model_fitted_data.csv", row
 
 cat("Exported final model fitted data and residuals to: backward_model_fitted_data.csv\n")
 ```
+
+```{r}
+# --- Method 1: Print the Final Formula (shows predictors) ---
+cat("--- Model Predictors (Formula) ---\n")
+print(formula(backward_model))
+cat("\n")
+
+# --- Method 2: Construct the Full Equation using Coefficients (Recommended) ---
+
+# Start the equation string with the dependent variable
+equation_string <- "Predicted Total Amount = "
+
+# Iterate through the coefficients data frame
+for (i in 1:nrow(final_coefficients_df)) {
+  term <- final_coefficients_df$Predictor[i]
+  estimate <- final_coefficients_df$Estimate[i]
+  
+  # Format the estimate to two decimal places
+  formatted_estimate <- round(estimate, 3)
+  
+  # Determine the sign for positive terms
+  if (i > 1 && formatted_estimate > 0) {
+    equation_string <- paste0(equation_string, " + ")
+  } else if (i > 1 && formatted_estimate < 0) {
+    # If negative, the minus sign is included, so just add a space
+    equation_string <- paste0(equation_string, " ")
+  }
+  
+  # Add the term to the string
+  if (term == "(Intercept)") {
+    equation_string <- paste0(equation_string, formatted_estimate)
+  } else {
+    # For all other predictors, include the coefficient and the variable name
+    # If coefficient is negative, the formatted_estimate already includes the sign
+    equation_string <- paste0(equation_string, formatted_estimate, " * ", term)
+  }
+}
+
+# Final output
+cat("--- Full Model Equation (Constructed) ---\n")
+cat(equation_string, "\n")
+```
+
 
 ```{r}
 key_categories <- c("Home", "Grocery", "Electronics", "Beauty", "Fashion", "Toys", "Sports")
