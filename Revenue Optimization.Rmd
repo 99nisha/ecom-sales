@@ -4,11 +4,22 @@ output: html_notebook
 ---
 
 ```{r}
+# install.packages("dplyr")
+# install.packages("tidyr")
+# install.packages("lubridate")
+# install.packages("ggplot")
+# install.packages("ggcorrplot")
+# install.packages("caret")
+# install.packages("lattice")
+# install.packages("recipes")
+
 library(dplyr)
 library(tidyr)
 library(lubridate)
 library(ggplot2)
 library(ggcorrplot)
+library(caret)
+library(broom)
 ```
 
 ```{r}
@@ -82,8 +93,8 @@ plot_categorical_feature_contributions <- function(df, group_var) {
     scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
     scale_fill_brewer(palette = "Set3") +
     labs(
-      title = "Category Contributions to Average Metrics",
-      x = "Category Contribution (%)",
+      title = "Contributions to Average Metrics",
+      x = "Contribution (%)",
       y = "",
       fill = rlang::as_string(group_var)
     ) +
@@ -208,4 +219,111 @@ ggplot(df, aes(x = total_amount, y = shipping_cost)) +
 
 
 ```
+
+## Selected: Price, Quantity, Discount and Category
+
+```{r}
+sales_data <- df %>%
+  select(total_amount, profit_margin, price, quantity, discount, category)
+
+dmy <- dummyVars("~ category", data = sales_data, fullRank = TRUE)
+
+category_dummies <- data.frame(predict(dmy, newdata = sales_data))
+
+sales_encoded <- sales_data %>%
+  select(-category) %>%
+  bind_cols(category_dummies)
+
+head(sales_encoded)
+```
+
+## Multiple Linear Regression Model
+
+- Target: Total Amount
+
+```{r}
+# Corrected Model Formula Definition
+# We use the dot '.' to include all columns EXCEPT the one we explicitly exclude with the minus sign.
+model_formula <- total_amount ~ . - profit_margin 
+
+# Run the Multiple Linear Regression
+sales_model <- lm(model_formula, data = sales_encoded)
+
+# ----------------------------------------------------
+# 1. Backward Elimination
+# ----------------------------------------------------
+backward_model <- step(sales_model, direction = "backward", trace = 0)
+cat("Backward Elimination Complete.\n\n")
+
+# ----------------------------------------------------
+# 2. Export the Final Model Summary (Coefficients and Performance)
+# ----------------------------------------------------
+
+# A. Extract Coefficients and Statistics using 'tidy' (from broom)
+final_coefficients_df <- tidy(backward_model)
+
+# Rename the columns for clarity (optional, but good practice)
+final_coefficients_df <- final_coefficients_df %>%
+  rename(
+    Predictor = term,
+    Estimate = estimate,
+    Std_Error = std.error,
+    T_Value = statistic,
+    P_Value = p.value
+  )
+
+# B. Extract Global Model Performance Metrics using 'glance' (from broom)
+final_performance_df <- glance(backward_model)
+
+# Select and transpose key performance metrics for a clean summary table
+# We only want the R-squared, Adj R-squared, F-statistic, and P-value for the F-test.
+final_performance_metrics <- final_performance_df %>%
+  # 1. Select the columns with R-squared and F-test results
+  dplyr::select(r.squared, adj.r.squared, statistic, p.value) %>%
+  # 2. Pivot the data from wide to long format
+  tidyr::pivot_longer(everything(), names_to = "Metric", values_to = "Value") %>%
+  # 3. Recode the Metric column values to fix the naming error
+  dplyr::mutate(
+    Metric = dplyr::recode(
+      Metric,
+      "statistic" = "F_Statistic",
+      "p.value" = "F_P_Value",
+      "r.squared" = "R_squared",
+      "adj.r.squared" = "Adjusted_R_squared"
+    )
+  )
+
+# Export the Summary Data
+write.csv(final_coefficients_df, "Export/total_amount_backward_model_coefficients.csv", row.names = FALSE)
+write.csv(final_performance_metrics, "Export/total_amount_backward_model_performance.csv", row.names = FALSE)
+
+cat("Exported final model coefficients to: backward_model_coefficients.csv\n")
+cat("Exported final model performance to: backward_model_performance.csv\n\n")
+
+# ----------------------------------------------------
+# 3. Export the Final Model Data (Fitted, Predicted, and Residuals)
+# ----------------------------------------------------
+
+# Augment the original data with model results (fitted values, residuals, etc.)
+final_model_data <- augment(backward_model, data = sales_encoded)
+
+# Select the original features, the target, and the key model output columns
+export_data <- final_model_data %>%
+  select(
+    total_amount, 
+    price, 
+    quantity, 
+    discount, 
+    starts_with("category"), 
+    .fitted,        # The predicted total_amount (Y-hat)
+    .resid          # The residual (Actual - Predicted)
+  )
+
+# Export the Data
+write.csv(export_data, "Export/total_amount_backward_model_fitted_data.csv", row.names = FALSE)
+
+cat("Exported final model fitted data and residuals to: backward_model_fitted_data.csv\n")
+```
+
+
 
